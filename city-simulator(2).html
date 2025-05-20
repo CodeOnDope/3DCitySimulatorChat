@@ -537,9 +537,13 @@
         
         // Generate a random city layout
         function generateCity() {
-            // Clear existing buildings
+            document.getElementById('status-bar').textContent = 'Generating city...';
+            // Clear existing buildings and free memory
             for (let i = buildings.length - 1; i >= 0; i--) {
-                scene.remove(buildings[i]);
+                const b = buildings[i];
+                if (b.geometry) b.geometry.dispose();
+                if (b.material) b.material.dispose();
+                scene.remove(b);
             }
             buildings = [];
             
