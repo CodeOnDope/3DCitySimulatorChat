@@ -27,6 +27,7 @@
         #canvas-container {
             flex: 1;
             height: 100vh;
+            position: relative; /* allow overlay positioning */
         }
         
         #control-panel {
@@ -237,10 +238,39 @@
             padding: 2px 4px;
             margin: 0 2px;
         }
+
+        /* One-point perspective overlay */
+        #vanishing-lines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        #vanishing-lines line {
+            stroke: red;
+            stroke-width: 1;
+            opacity: 0.5;
+        }
+
+        #vanishing-lines circle {
+            fill: red;
+        }
     </style>
 </head>
 <body>
-    <div id="canvas-container"></div>
+    <div id="canvas-container">
+        <svg id="vanishing-lines" width="100%" height="100%">
+            <line x1="0%" y1="0%" x2="50%" y2="50%" />
+            <line x1="100%" y1="0%" x2="50%" y2="50%" />
+            <line x1="0%" y1="100%" x2="50%" y2="50%" />
+            <line x1="100%" y1="100%" x2="50%" y2="50%" />
+            <circle cx="50%" cy="50%" r="2" />
+        </svg>
+    </div>
     
     <div id="control-panel">
         <h1 style="margin-bottom: 20px; color: #2E7D32; font-size: 24px;">3D City Simulator</h1>
@@ -337,6 +367,20 @@
                 <button id="first-person" style="margin-top: 10px; width: 100%;">First Person View</button>
                 <button id="top-down" style="margin-top: 5px; width: 100%;">Top-Down View</button>
                 <button id="isometric" style="margin-top: 5px; width: 100%;">Isometric View</button>
+                <button id="one-point" style="margin-top: 5px; width: 100%;">1-Point Perspective</button>
+                <div id="one-point-controls" style="margin-top: 10px;">
+                    <label><input type="checkbox" id="toggle-guidelines" checked> Show Guidelines</label>
+                    <div class="slider-container">
+                        <label for="vanish-x">Vanishing Point X</label>
+                        <input type="range" id="vanish-x" min="0" max="100" value="50">
+                        <div class="slider-value" id="vanish-x-value">50%</div>
+                    </div>
+                    <div class="slider-container">
+                        <label for="vanish-y">Vanishing Point Y</label>
+                        <input type="range" id="vanish-y" min="0" max="100" value="50">
+                        <div class="slider-value" id="vanish-y-value">50%</div>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -759,6 +803,7 @@
             document.getElementById('first-person').addEventListener('click', setFirstPersonView);
             document.getElementById('top-down').addEventListener('click', setTopDownView);
             document.getElementById('isometric').addEventListener('click', setIsometricView);
+            document.getElementById('one-point').addEventListener('click', setOnePointPerspectiveView);
             
             // Time of day selector
             document.getElementById('time-of-day').addEventListener('change', updateTimeOfDay);
@@ -793,6 +838,15 @@
             document.getElementById('building-density').addEventListener('input', function() {
                 document.getElementById('building-density-value').textContent = this.value;
             });
+
+            // Vanishing point controls
+            document.getElementById('vanish-x').addEventListener('input', updateVanishingPoint);
+            document.getElementById('vanish-y').addEventListener('input', updateVanishingPoint);
+            document.getElementById('toggle-guidelines').addEventListener('change', toggleGuidelines);
+
+            // Initialize vanishing point display
+            updateVanishingPoint();
+            toggleGuidelines();
             
             // Click on buildings
             renderer.domElement.addEventListener('click', onBuildingClick);
@@ -961,6 +1015,54 @@
             document.getElementById('camera-fov-value').textContent = "60°";
             camera.fov = 60;
             camera.updateProjectionMatrix();
+        }
+
+        // Set one-point perspective view
+        function setOnePointPerspectiveView() {
+            const height = 50;
+            const distance = 200;
+            camera.position.set(0, height, distance);
+            controls.target.set(0, height, 0);
+
+            document.getElementById('camera-height').value = height;
+            document.getElementById('camera-height-value').textContent = height;
+            document.getElementById('camera-distance').value = distance;
+            document.getElementById('camera-distance-value').textContent = distance;
+            document.getElementById('camera-fov').value = 60;
+            document.getElementById('camera-fov-value').textContent = "60°";
+            camera.fov = 60;
+            camera.updateProjectionMatrix();
+
+            // Ensure guidelines are visible when switching to this view
+            document.getElementById('toggle-guidelines').checked = true;
+            toggleGuidelines();
+        }
+
+        // Update vanishing point overlay
+        function updateVanishingPoint() {
+            const x = document.getElementById('vanish-x').value;
+            const y = document.getElementById('vanish-y').value;
+
+            document.getElementById('vanish-x-value').textContent = `${x}%`;
+            document.getElementById('vanish-y-value').textContent = `${y}%`;
+
+            const lines = document.querySelectorAll('#vanishing-lines line');
+            lines.forEach(line => {
+                line.setAttribute('x2', `${x}%`);
+                line.setAttribute('y2', `${y}%`);
+            });
+
+            const dot = document.querySelector('#vanishing-lines circle');
+            if (dot) {
+                dot.setAttribute('cx', `${x}%`);
+                dot.setAttribute('cy', `${y}%`);
+            }
+        }
+
+        // Show or hide perspective guidelines
+        function toggleGuidelines() {
+            const visible = document.getElementById('toggle-guidelines').checked;
+            document.getElementById('vanishing-lines').style.display = visible ? 'block' : 'none';
         }
         
         // Update time of day lighting
