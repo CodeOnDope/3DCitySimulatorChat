@@ -25,8 +25,18 @@
         }
         
         #canvas-container {
+            position: relative;
             flex: 1;
             height: 100vh;
+        }
+
+        #perspective-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
         }
         
         #control-panel {
@@ -240,7 +250,9 @@
     </style>
 </head>
 <body>
-    <div id="canvas-container"></div>
+    <div id="canvas-container">
+        <canvas id="perspective-overlay"></canvas>
+    </div>
     
     <div id="control-panel">
         <h1 style="margin-bottom: 20px; color: #2E7D32; font-size: 24px;">3D City Simulator</h1>
@@ -368,6 +380,23 @@
                 <button id="shadows-off">Off</button>
             </div>
         </div>
+
+        <div class="control-group">
+            <h2>Perspective Overlay</h2>
+            <div class="slider-container">
+                <label for="vanishing-x">Vanishing Point X</label>
+                <input type="range" id="vanishing-x" min="-100" max="100" value="0" step="1">
+                <div class="slider-value" id="vanishing-x-value">0</div>
+            </div>
+            <div class="slider-container">
+                <label for="vanishing-y">Vanishing Point Y</label>
+                <input type="range" id="vanishing-y" min="-100" max="100" value="0" step="1">
+                <div class="slider-value" id="vanishing-y-value">0</div>
+            </div>
+            <label style="margin-top:10px; display:block;">
+                <input type="checkbox" id="perspective-toggle" checked> Show lines
+            </label>
+        </div>
         
         <div class="keyboard-shortcuts">
             <h3 style="margin-bottom: 5px; font-size: 14px;">Keyboard Shortcuts</h3>
@@ -393,6 +422,7 @@
         let selectedBuilding = null;
         let lights = {};
         let ground;
+        let overlayCanvas, overlayCtx;
         
         // Initialize the scene
         function init() {
@@ -409,7 +439,14 @@
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth - 320, window.innerHeight);
             renderer.shadowMap.enabled = true;
-            document.getElementById('canvas-container').appendChild(renderer.domElement);
+            const container = document.getElementById('canvas-container');
+            container.appendChild(renderer.domElement);
+
+            // Overlay canvas for perspective guides
+            overlayCanvas = document.getElementById('perspective-overlay');
+            overlayCanvas.width = renderer.domElement.width;
+            overlayCanvas.height = renderer.domElement.height;
+            overlayCtx = overlayCanvas.getContext('2d');
             
             // Create controls
             controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -537,9 +574,13 @@
         
         // Generate a random city layout
         function generateCity() {
-            // Clear existing buildings
+            document.getElementById('status-bar').textContent = 'Generating city...';
+            // Clear existing buildings and free memory
             for (let i = buildings.length - 1; i >= 0; i--) {
-                scene.remove(buildings[i]);
+                const b = buildings[i];
+                if (b.geometry) b.geometry.dispose();
+                if (b.material) b.material.dispose();
+                scene.remove(b);
             }
             buildings = [];
             
@@ -685,6 +726,56 @@
             camera.aspect = (window.innerWidth - 320) / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth - 320, window.innerHeight);
+            if (overlayCanvas) {
+                overlayCanvas.width = renderer.domElement.width;
+                overlayCanvas.height = renderer.domElement.height;
+            }
+        }
+
+        function drawPerspectiveLines() {
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+            const offsetX = parseFloat(document.getElementById('vanishing-x').value) / 100;
+            const offsetY = parseFloat(document.getElementById('vanishing-y').value) / 100;
+            const vx = overlayCanvas.width / 2 + offsetX * overlayCanvas.width / 2;
+            const vy = overlayCanvas.height / 2 + offsetY * overlayCanvas.height / 2;
+
+            // Draw vanishing point
+            overlayCtx.fillStyle = 'red';
+            overlayCtx.beginPath();
+            overlayCtx.arc(vx, vy, 4, 0, 2 * Math.PI);
+            overlayCtx.fill();
+
+            overlayCtx.strokeStyle = 'rgba(255,0,0,0.5)';
+            overlayCtx.lineWidth = 1;
+
+            buildings.forEach(b => {
+                if (!b.geometry.boundingBox) {
+                    b.geometry.computeBoundingBox();
+                }
+                const bb = b.geometry.boundingBox.clone();
+                bb.applyMatrix4(b.matrixWorld);
+                const corners = [
+                    new THREE.Vector3(bb.min.x, bb.min.y, bb.min.z),
+                    new THREE.Vector3(bb.max.x, bb.min.y, bb.min.z),
+                    new THREE.Vector3(bb.min.x, bb.min.y, bb.max.z),
+                    new THREE.Vector3(bb.max.x, bb.min.y, bb.max.z),
+                    new THREE.Vector3(bb.min.x, bb.max.y, bb.min.z),
+                    new THREE.Vector3(bb.max.x, bb.max.y, bb.min.z),
+                    new THREE.Vector3(bb.min.x, bb.max.y, bb.max.z),
+                    new THREE.Vector3(bb.max.x, bb.max.y, bb.max.z)
+                ];
+
+                overlayCtx.beginPath();
+                corners.forEach(c => {
+                    const vec = c.clone().project(camera);
+                    const sx = (vec.x * 0.5 + 0.5) * overlayCanvas.width;
+                    const sy = (-vec.y * 0.5 + 0.5) * overlayCanvas.height;
+                    overlayCtx.moveTo(vx, vy);
+                    overlayCtx.lineTo(sx, sy);
+                });
+                overlayCtx.stroke();
+            });
         }
         
         // Animation loop
@@ -699,8 +790,13 @@
             if (controls) {
                 controls.update();
             }
-            
+
             renderer.render(scene, camera);
+            if (overlayCtx && document.getElementById('perspective-toggle').checked) {
+                drawPerspectiveLines();
+            } else if (overlayCtx) {
+                overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            }
         }
         
         // Initialize UI interactions
@@ -792,6 +888,20 @@
             // Building density slider
             document.getElementById('building-density').addEventListener('input', function() {
                 document.getElementById('building-density-value').textContent = this.value;
+            });
+
+            document.getElementById('vanishing-x').addEventListener('input', function() {
+                document.getElementById('vanishing-x-value').textContent = this.value;
+            });
+
+            document.getElementById('vanishing-y').addEventListener('input', function() {
+                document.getElementById('vanishing-y-value').textContent = this.value;
+            });
+
+            document.getElementById('perspective-toggle').addEventListener('change', function() {
+                if (!this.checked && overlayCtx) {
+                    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                }
             });
             
             // Click on buildings
